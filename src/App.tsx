@@ -82,7 +82,7 @@ const Toast = ({ message, type = 'success', onClose }: { message: string, type?:
   </motion.div>
 );
 
-const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel }: any) => (
+const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, showPasswordInput, passwordValue, onPasswordChange }: any) => (
   <AnimatePresence>
     {isOpen && (
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
@@ -103,7 +103,22 @@ const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel }: any) => (
             <AlertTriangle size={32} />
           </div>
           <h3 className="text-2xl font-bold text-white mb-2">{title}</h3>
-          <p className="text-zinc-400 mb-8 leading-relaxed">{message}</p>
+          <p className="text-zinc-400 mb-6 leading-relaxed">{message}</p>
+          
+          {showPasswordInput && (
+            <div className="mb-8">
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Contraseña de Seguridad</label>
+              <input 
+                type="password"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-rose-500/50"
+                placeholder="Ingresa la clave..."
+                value={passwordValue}
+                onChange={(e) => onPasswordChange(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
+
           <div className="flex gap-3">
             <Button variant="secondary" className="flex-1" onClick={onCancel}>Cancelar</Button>
             <Button variant="danger" className="flex-1" onClick={onConfirm}>Confirmar</Button>
@@ -200,6 +215,13 @@ export default function App() {
   // Form States
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [workerManagementSearchQuery, setWorkerManagementSearchQuery] = useState('');
+  const [resumenSearchQuery, setResumenSearchQuery] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  const [customItemName, setCustomItemName] = useState('');
+  const [customItemPrice, setCustomItemPrice] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -256,25 +278,39 @@ export default function App() {
     }
   };
 
-  const handleAddConsumption = async (type: Consumption['type'], price: number, productId?: number, description?: string) => {
+  const handleAddConsumption = async (type: Consumption['type'], price: number, productId?: number, description?: string, qty: number = 1) => {
     if (!selectedWorker) return;
 
     try {
-      const res = await fetch('/api/consumptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          worker_id: selectedWorker.id,
-          product_id: productId,
-          type,
-          price,
-          description
-        })
-      });
+      // Create multiple consumptions if quantity > 1
+      const promises = [];
+      for (let i = 0; i < qty; i++) {
+        promises.push(
+          fetch('/api/consumptions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              worker_id: selectedWorker.id,
+              product_id: productId,
+              type,
+              price,
+              description
+            })
+          })
+        );
+      }
 
-      if (res.ok) {
+      const results = await Promise.all(promises);
+      const allOk = results.every(res => res.ok);
+
+      if (allOk) {
         fetchData();
-        showToast(`Agregado: ${description || 'Consumo'}`);
+        showToast(`${qty > 1 ? `(${qty}) ` : ''}Agregado: ${description || 'Consumo'}`);
+        setQuantity(1); // Reset quantity
+        setCustomItemName('');
+        setCustomItemPrice('');
+      } else {
+        showToast('Error al registrar algunos consumos', 'error');
       }
     } catch (error) {
       showToast('Error al registrar consumo', 'error');
@@ -283,7 +319,12 @@ export default function App() {
   };
 
   const handleResetWeek = async () => {
+    if (resetPassword !== '2025') {
+      showToast('Contraseña incorrecta', 'error');
+      return;
+    }
     setIsConfirmOpen(false);
+    setResetPassword('');
     setLoading(true);
     try {
       const res = await fetch('/api/reset-week', { method: 'POST' });
@@ -584,60 +625,129 @@ export default function App() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Store Products */}
                         <Card title="Tienda">
-                          <div className="grid grid-cols-2 gap-3">
-                            {products.map(product => (
-                              <button
-                                key={product.id}
-                                onClick={() => handleAddConsumption('store', product.price, product.id, product.name)}
-                                className="p-4 bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-left transition-all active:scale-95 group"
-                              >
-                                <div className="font-bold text-zinc-100 group-hover:text-white">{product.name}</div>
-                                <div className="text-emerald-500 font-black mt-1">${product.price.toLocaleString()}</div>
-                              </button>
-                            ))}
-                            {products.length === 0 && (
-                              <p className="col-span-2 text-center py-8 text-zinc-600 italic text-sm">No hay productos creados</p>
-                            )}
+                          <div className="space-y-4">
+                            {/* Quantity and Search */}
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              <div className="flex items-center gap-2 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1">
+                                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Cant.</span>
+                                <button 
+                                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                                  className="w-8 h-8 rounded-lg bg-zinc-700 flex items-center justify-center text-white hover:bg-zinc-600 transition-colors"
+                                >
+                                  -
+                                </button>
+                                <span className="w-8 text-center font-black text-emerald-500">{quantity}</span>
+                                <button 
+                                  onClick={() => setQuantity(quantity + 1)}
+                                  className="w-8 h-8 rounded-lg bg-zinc-700 flex items-center justify-center text-white hover:bg-zinc-600 transition-colors"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                                <input 
+                                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                                  placeholder="Buscar producto..."
+                                  value={productSearchQuery}
+                                  onChange={(e) => setProductSearchQuery(e.target.value)}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-2 custom-scrollbar">
+                              {products
+                                .filter(p => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()))
+                                .map(product => (
+                                <button
+                                  key={product.id}
+                                  onClick={() => handleAddConsumption('store', product.price, product.id, product.name, quantity)}
+                                  className="p-4 bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-left transition-all active:scale-95 group"
+                                >
+                                  <div className="font-bold text-zinc-100 group-hover:text-white truncate">{product.name}</div>
+                                  <div className="text-emerald-500 font-black mt-1">${product.price.toLocaleString()}</div>
+                                </button>
+                              ))}
+                              {products.length === 0 && (
+                                <p className="col-span-2 text-center py-8 text-zinc-600 italic text-sm">No hay productos creados</p>
+                              )}
+                            </div>
                           </div>
                         </Card>
 
-                        {/* Quick Food Actions */}
-                        <Card title="Comidas Rápidas">
-                          <div className="space-y-3">
-                            <button
-                              onClick={() => handleAddConsumption('lunch', 12000, undefined, 'Almuerzo Completo')}
-                              className="w-full flex items-center justify-between p-4 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400 transition-all active:scale-95"
-                            >
-                              <div className="flex items-center gap-3">
-                                <Utensils size={20} />
-                                <span className="font-black uppercase text-sm tracking-tight">Almuerzo Completo</span>
-                              </div>
-                              <span className="font-black">$12.000</span>
-                            </button>
-                            <button
-                              onClick={() => handleAddConsumption('soup', 5000, undefined, 'Sopa')}
-                              className="w-full flex items-center justify-between p-4 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-400 transition-all active:scale-95"
-                            >
-                              <div className="flex items-center gap-3">
-                                <Utensils size={20} />
-                                <span className="font-black uppercase text-sm tracking-tight">Sopa</span>
-                              </div>
-                              <span className="font-black">$5.000</span>
-                            </button>
-                            {selectedWorker.type === 'Santa Rosa' && (
+                        {/* Quick Food & Custom Actions */}
+                        <div className="space-y-6">
+                          <Card title="Comidas Rápidas">
+                            <div className="space-y-3">
                               <button
-                                onClick={() => handleAddConsumption('sunday_food', 27000, undefined, 'Comida Domingo')}
-                                className="w-full flex items-center justify-between p-4 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl text-rose-400 transition-all active:scale-95"
+                                onClick={() => handleAddConsumption('lunch', 12000, undefined, 'Almuerzo Completo', quantity)}
+                                className="w-full flex items-center justify-between p-4 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400 transition-all active:scale-95"
                               >
                                 <div className="flex items-center gap-3">
-                                  <Sun size={20} />
-                                  <span className="font-black uppercase text-sm tracking-tight">Día Domingo</span>
+                                  <Utensils size={20} />
+                                  <span className="font-black uppercase text-sm tracking-tight">Almuerzo Completo</span>
                                 </div>
-                                <span className="font-black">$27.000</span>
+                                <span className="font-black">$12.000</span>
                               </button>
-                            )}
-                          </div>
-                        </Card>
+                              <button
+                                onClick={() => handleAddConsumption('soup', 5000, undefined, 'Sopa', quantity)}
+                                className="w-full flex items-center justify-between p-4 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-400 transition-all active:scale-95"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <Utensils size={20} />
+                                  <span className="font-black uppercase text-sm tracking-tight">Sopa</span>
+                                </div>
+                                <span className="font-black">$5.000</span>
+                              </button>
+                              {selectedWorker.type === 'Santa Rosa' && (
+                                <button
+                                  onClick={() => handleAddConsumption('sunday_food', 27000, undefined, 'Comida Domingo', quantity)}
+                                  className="w-full flex items-center justify-between p-4 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl text-rose-400 transition-all active:scale-95"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <Sun size={20} />
+                                    <span className="font-black uppercase text-sm tracking-tight">Día Domingo</span>
+                                  </div>
+                                  <span className="font-black">$27.000</span>
+                                </button>
+                              )}
+                            </div>
+                          </Card>
+
+                          <Card title="Consumo Personalizado">
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 ml-1">Descripción</label>
+                                  <input 
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                                    placeholder="Ej: Jabón, etc"
+                                    value={customItemName}
+                                    onChange={(e) => setCustomItemName(e.target.value)}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 ml-1">Precio</label>
+                                  <input 
+                                    type="number"
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                                    placeholder="0"
+                                    value={customItemPrice}
+                                    onChange={(e) => setCustomItemPrice(e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleAddConsumption('store', Number(customItemPrice), undefined, customItemName, quantity)}
+                                disabled={!customItemName || !customItemPrice}
+                                className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:hover:bg-emerald-500 text-zinc-900 font-black rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+                              >
+                                <Plus size={18} />
+                                AGREGAR A LA CUENTA {quantity > 1 && `(x${quantity})`}
+                              </button>
+                            </div>
+                          </Card>
+                        </div>
                       </div>
 
                       {/* Recent Consumptions for this worker */}
@@ -688,11 +798,22 @@ export default function App() {
           )}
 
           {activeTab === 'summary' && (
-            <SummaryView workers={workers} consumptions={consumptions} />
+            <SummaryView 
+              workers={workers} 
+              consumptions={consumptions} 
+              searchQuery={resumenSearchQuery}
+              setSearchQuery={setResumenSearchQuery}
+            />
           )}
 
           {activeTab === 'workers' && (
-            <WorkerManagement workers={workers} onUpdate={fetchData} showToast={showToast} />
+            <WorkerManagement 
+              workers={workers} 
+              onUpdate={fetchData} 
+              showToast={showToast} 
+              searchQuery={workerManagementSearchQuery}
+              setSearchQuery={setWorkerManagementSearchQuery}
+            />
           )}
 
           {activeTab === 'products' && (
@@ -767,7 +888,13 @@ export default function App() {
         title="¿Reiniciar Semana?"
         message="Esta acción eliminará TODOS los consumos registrados hasta el momento. Los trabajadores y productos no se verán afectados. ¿Deseas continuar?"
         onConfirm={handleResetWeek}
-        onCancel={() => setIsConfirmOpen(false)}
+        onCancel={() => {
+          setIsConfirmOpen(false);
+          setResetPassword('');
+        }}
+        showPasswordInput={true}
+        passwordValue={resetPassword}
+        onPasswordChange={setResetPassword}
       />
 
       <AnimatePresence>
@@ -792,21 +919,34 @@ const NavItem = ({ icon: Icon, label, active, onClick }: any) => (
   </button>
 );
 
-const SummaryView = ({ workers, consumptions }: { workers: Worker[], consumptions: Consumption[] }) => {
+const SummaryView = ({ workers, consumptions, searchQuery, setSearchQuery }: { workers: Worker[], consumptions: Consumption[], searchQuery: string, setSearchQuery: any }) => {
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       className="max-w-6xl mx-auto space-y-8"
     >
-      <header>
-        <h1 className="text-4xl font-black tracking-tighter uppercase">Resumen de Cuentas</h1>
-        <p className="text-zinc-500 font-medium">Vista general de saldos por trabajador</p>
+      <header className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-black tracking-tighter uppercase">Resumen de Cuentas</h1>
+          <p className="text-zinc-500 font-medium">Vista general de saldos por trabajador</p>
+        </div>
+        <div className="relative w-full sm:w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+          <input 
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            placeholder="Buscar trabajador..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
       </header>
 
       <Card title="Estado de Cuentas Semanal">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {workers.map(worker => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-h-[calc(100vh-300px)] overflow-y-auto pr-2 custom-scrollbar">
+          {workers
+            .filter(w => w.name.toLowerCase().includes(searchQuery.toLowerCase()) || w.number?.toString().includes(searchQuery))
+            .map(worker => {
             const workerConsumptions = consumptions.filter(c => c.worker_id === worker.id);
             const storeTotal = workerConsumptions.reduce((sum, c) => sum + c.price, 0);
             let baseFood = 0;
@@ -859,9 +999,16 @@ const SummaryView = ({ workers, consumptions }: { workers: Worker[], consumption
   );
 };
 
-const WorkerManagement = ({ workers, onUpdate, showToast }: { workers: Worker[], onUpdate: () => void, showToast: any }) => {
+const WorkerManagement = ({ workers, onUpdate, showToast, searchQuery, setSearchQuery }: { workers: Worker[], onUpdate: () => void, showToast: any, searchQuery: string, setSearchQuery: any }) => {
   const [isEditing, setIsEditing] = useState<Worker | null>(null);
   const [formData, setFormData] = useState({ name: '', type: 'Santa Rosa' as WorkerType, number: '' });
+
+  const filteredWorkers = useMemo(() => {
+    return workers.filter(w => 
+      w.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      w.number?.toString().includes(searchQuery)
+    );
+  }, [workers, searchQuery]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -951,41 +1098,53 @@ const WorkerManagement = ({ workers, onUpdate, showToast }: { workers: Worker[],
         </Card>
 
         <Card className="lg:col-span-2" title="Lista de Trabajadores">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {workers.map(worker => (
-              <div key={worker.id} className="flex items-center justify-between p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl hover:border-zinc-500 transition-all">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-zinc-700 flex items-center justify-center font-bold text-zinc-400">
-                    {worker.number || 'W'}
+          <div className="space-y-4">
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+              <input 
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                placeholder="Buscar por nombre o número..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[calc(100vh-400px)] overflow-y-auto pr-2 custom-scrollbar">
+              {filteredWorkers.map(worker => (
+                <div key={worker.id} className="flex items-center justify-between p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl hover:border-zinc-500 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-lg bg-zinc-700 flex items-center justify-center font-bold text-zinc-400">
+                      {worker.number || 'W'}
+                    </div>
+                    <div>
+                      <div className="font-bold">{worker.name}</div>
+                      <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">{worker.type}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-bold">{worker.name}</div>
-                    <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">{worker.type}</div>
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => {
+                        setIsEditing(worker);
+                        setFormData({ name: worker.name, type: worker.type, number: worker.number?.toString() || '' });
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="p-2 text-zinc-400 hover:text-emerald-500 transition-colors"
+                    >
+                      <Edit2 size={18} />
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteWorker(worker.id)}
+                      className="p-2 text-zinc-400 hover:text-rose-500 transition-colors"
+                    >
+                      <Trash2 size={18} />
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  <button 
-                    onClick={() => {
-                      setIsEditing(worker);
-                      setFormData({ name: worker.name, type: worker.type, number: worker.number?.toString() || '' });
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className="p-2 text-zinc-400 hover:text-emerald-500 transition-colors"
-                  >
-                    <Edit2 size={18} />
-                  </button>
-                  <button 
-                    onClick={() => handleDeleteWorker(worker.id)}
-                    className="p-2 text-zinc-400 hover:text-rose-500 transition-colors"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </div>
-            ))}
-            {workers.length === 0 && (
-              <p className="col-span-2 text-center py-12 text-zinc-600 italic">No hay trabajadores registrados</p>
-            )}
+              ))}
+              {filteredWorkers.length === 0 && (
+                <p className="col-span-2 text-center py-12 text-zinc-600 italic">No se encontraron trabajadores</p>
+              )}
+            </div>
           </div>
         </Card>
       </div>
@@ -1076,7 +1235,7 @@ const ProductManagement = ({ products, onUpdate, showToast }: { products: Produc
         </Card>
 
         <Card className="lg:col-span-2" title="Inventario de Tienda">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[calc(100vh-350px)] overflow-y-auto pr-2 custom-scrollbar">
             {products.map(product => (
               <div key={product.id} className="flex items-center justify-between p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl hover:border-zinc-500 transition-all">
                 <div>
