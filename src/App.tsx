@@ -750,12 +750,11 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Recent Consumptions for this worker */}
-                      <Card title="Consumos Recientes">
-                        <div className="space-y-2">
+                      {/* All Consumptions for this worker */}
+                      <Card title="Historial de Consumos del Trabajador">
+                        <div className="space-y-2 max-h-[calc(100vh-400px)] overflow-y-auto pr-2 custom-scrollbar">
                           {consumptions
                             .filter(c => c.worker_id === selectedWorker.id)
-                            .slice(0, 5)
                             .map(c => (
                               <div key={c.id} className="flex items-center justify-between p-3 bg-zinc-800/30 rounded-lg border border-zinc-800">
                                 <div>
